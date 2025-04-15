@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>DeFi Lending</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding: 20px; max-width: 600px; margin: 0 auto; }
+    .card { margin-bottom: 20px; }
+    #amountInput { width: 200px; display: inline-block; }
+    #walletAddress { 
+      font-family: monospace;
+      font-size: 0.9em;
+      word-break: break-all;
+    }
+    .network-indicator {
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-5">
+    <h1 class="text-center mb-4">DeFi Lending</h1>
+    <button id="connectBtn" class="btn btn-primary mb-4">Connect MetaMask</button>
+    
+    <div class="card mb-4">
+      <div class="card-header bg-dark text-white">Wallet Info</div>
+      <div class="card-body">
+        <p>Connected Wallet: <span id="walletAddress">Not connected</span> <span id="networkIndicator" class="network-indicator bg-secondary text-white"></span></p>
+        <p>ETH Balance: <span id="ethBalance">0</span> ETH</p>
+      </div>
+    </div>
+    
+    <div class="card mb-4">
+      <div class="card-header bg-dark text-white">Pool Stats</div>
+      <div class="card-body">
+        <p>Total Liquidity: <span id="totalLiquidity">0</span> DFL</p>
+        <p>Available: <span id="availableLiquidity">0</span> DFL</p>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header bg-dark text-white">Your Account</div>
+      <div class="card-body">
+        <input type="number" id="amountInput" placeholder="Amount" class="form-control mb-2">
+        <button id="depositBtn" class="btn btn-success">Deposit</button>
+        <button id="borrowBtn" class="btn btn-warning">Borrow</button>
+        <p class="mt-2">Your DFL Balance: <span id="userBalance">0</span> DFL</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load ethers from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  
+  <!-- App Logic -->
+  <script>
+    // Replace with your actual contract addresses
+    const tokenABI =  [ 
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "spender",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "approve",
+          "outputs": [
+            {
+              "internalType": "bool",
+              "name": "",
+              "type": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "transfer",
+          "outputs": [
+            {
+              "internalType": "bool",
+              "name": "",
+              "type": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "transferFrom",
+          "outputs": [
+            {
+              "internalType": "bool",
+              "name": "",
+              "type": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            }
+          ],
+          "name": "balanceOf",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "totalSupply",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        }
+    ];
+
+    const lendingPoolABI = [
+        {
+          "inputs": [],
+          "name": "totalLiquidity",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "totalBorrowed",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "name": "deposit",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "name": "borrow",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+    ];
+
+    // Replace with your deployed contract addresses
+    const tokenAddress = "0x072232d128af5e76f0912c65121a456c8bbaa074";
+    const lendingPoolAddress = "0x0409497487e976dcbe2f5a4b21f8577ed3066124";
+    
+    let provider, signer, tokenContract, poolContract;
+    
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        if (!window.ethereum) return alert("Please install MetaMask!");
+      
+        try {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            
+            // Check network
+            const network = await provider.getNetwork();
+            updateNetworkIndicator(network.name, network.chainId);
+            
+            await provider.send("eth_requestAccounts", []);
+            signer = await provider.getSigner();
+            tokenContract = new ethers.Contract(tokenAddress, tokenABI, signer);
+            poolContract = new ethers.Contract(lendingPoolAddress, lendingPoolABI, signer);
+            
+            // Update UI
+            document.getElementById('connectBtn').textContent = "Connected";
+            const userAddress = await signer.getAddress();
+            document.getElementById('walletAddress').textContent = userAddress;
+            
+            await updateData();
+            
+            // Listen for account changes
+            window.ethereum.on('accountsChanged', async (accounts) => {
+                if (accounts.length > 0) {
+                    await updateData();
+                } else {
+                    // Wallet disconnected
+                    resetUI();
+                }
+            });
+            
+            // Listen for chain changes
+            window.ethereum.on('chainChanged', async (chainId) => {
+                window.location.reload();
+            });
+            
+        } catch (error) {
+            console.error("Connection failed:", error);
+            alert("Connection failed: " + error.message);
+        }
+    });
+
+    function updateNetworkIndicator(networkName, chainId) {
+        const indicator = document.getElementById('networkIndicator');
+        indicator.textContent = networkName + " (ChainID: " + chainId + ")";
+        
+        // Color coding for different networks
+        if (chainId === 1) { // Ethereum Mainnet
+            indicator.className = "network-indicator bg-success text-white";
+        } else if (chainId === 11155111) { // Sepolia
+            indicator.className = "network-indicator bg-primary text-white";
+        } else {
+            indicator.className = "network-indicator bg-warning text-dark";
+        }
+    }
+
+    function resetUI() {
+        document.getElementById('connectBtn').textContent = "Connect MetaMask";
+        document.getElementById('walletAddress').textContent = "Not connected";
+        document.getElementById('ethBalance').textContent = "0";
+        document.getElementById('totalLiquidity').textContent = "0";
+        document.getElementById('availableLiquidity').textContent = "0";
+        document.getElementById('userBalance').textContent = "0";
+        document.getElementById('networkIndicator').textContent = "";
+        document.getElementById('networkIndicator').className = "network-indicator bg-secondary text-white";
+    }
+
+    // Update UI data
+    async function updateData() {
+        if (!signer) return;
+        
+        try {
+            const userAddress = await signer.getAddress();
+            
+            // Get all data in parallel
+            const [liquidity, borrowed, tokenBalance, ethBalance] = await Promise.all([
+                poolContract.totalLiquidity(),
+                poolContract.totalBorrowed(),
+                tokenContract.balanceOf(userAddress),
+                provider.getBalance(userAddress)
+            ]);
+            
+            // Format ETH balance to show 4 decimal places
+            const formattedEthBalance = parseFloat(ethers.utils.formatEther(ethBalance)).toFixed(4);
+            
+            // Update the UI
+            document.getElementById('totalLiquidity').textContent = ethers.utils.formatEther(liquidity);
+            document.getElementById('availableLiquidity').textContent = ethers.utils.formatEther(liquidity.sub(borrowed));
+            document.getElementById('userBalance').textContent = ethers.utils.formatEther(tokenBalance);
+            document.getElementById('ethBalance').textContent = formattedEthBalance;
+            
+            console.log("Current balances:", {
+                ETH: formattedEthBalance,
+                DFL: ethers.utils.formatEther(tokenBalance),
+                TotalLiquidity: ethers.utils.formatEther(liquidity),
+                Available: ethers.utils.formatEther(liquidity.sub(borrowed))
+            });
+            
+        } catch (error) {
+            console.error("Error updating data:", error);
+            alert("Error updating balances: " + error.message);
+        }
+    }
+
+    // Handle deposit
+    document.getElementById('depositBtn').addEventListener('click', async () => {
+        const amountInput = document.getElementById('amountInput').value;
+        if (!amountInput || isNaN(amountInput) || parseFloat(amountInput) <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+        
+        try {
+            const amount = ethers.utils.parseEther(amountInput);
+            const txApprove = await tokenContract.approve(lendingPoolAddress, amount);
+            await txApprove.wait();
+            const txDeposit = await poolContract.deposit(amount);
+            await txDeposit.wait();
+            await updateData();
+            alert("Deposit successful!");
+        } catch (error) {
+            console.error("Deposit failed:", error);
+            alert("Deposit failed: " + (error.reason || error.message));
+        }
+    });
+
+    // Handle borrow
+    document.getElementById('borrowBtn').addEventListener('click', async () => {
+        const amountInput = document.getElementById('amountInput').value;
+        if (!amountInput || isNaN(amountInput) || parseFloat(amountInput) <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+        
+        try {
+            const amount = ethers.utils.parseEther(amountInput);
+            const tx = await poolContract.borrow(amount);
+            await tx.wait();
+            await updateData();
+            alert("Borrow successful!");
+        } catch (error) {
+            console.error("Borrow failed:", error);
+            alert("Borrow failed: " + (error.reason || error.message));
+        }
+    });
+  </script>
+</body>
+</html>
